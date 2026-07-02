@@ -1,0 +1,81 @@
+# DDKTN Configuration – PASCAL VOC 2012
+# 21 classes (0=background, 1-20=objects)
+# Usage:  python train.py --config configs/voc2012.yaml
+
+# ===== Data =====
+data:
+  root: "/home/zlt/projects/data/voc2012"   # img/ + label/ + train.txt
+  dataset_type: "voc"                 # 'voc' or 'orbital'
+  target_size: [256, 256]
+  sam2_size: 1024
+  num_classes: 21
+  num_folds: 5                        # Only used for orbital; VOC uses fixed splits
+  input_channels: 3                   # VOC is RGB → 3 channels
+
+# ===== Model =====
+model:
+  umamba:
+    input_channels: 3                 # ← MUST be 3 for VOC (RGB)
+    features_per_stage: [32, 64, 128, 256, 512, 512]
+    strides: [[1,1], [2,2], [2,2], [2,2], [2,2], [2,2]]
+    n_blocks_per_stage: [2, 2, 2, 2, 2, 2]
+
+  sam2:
+    config_file: "configs/sam2.1/sam2.1_hiera_t.yaml"
+    checkpoint: "checkpoints/sam2.1_hiera_tiny.pt"
+    freeze_backbone: true
+
+  dfi:
+    align_channels: 224
+    num_heads: 8
+
+  pam:
+    tau: 0.9                          # Paper Eq.17: deterministic binarization threshold
+    bilateral: false                  # VOC objects are not bilaterally symmetric
+
+  fusion:
+    hidden_dim: 256
+
+# ===== Training =====
+training:
+  epochs: 100                       # Paper: 100 epochs
+  batch_size: 2
+  lr: 0.00003                       # Paper: 3.0×10⁻⁵ for SAM2 non-backbone components
+  lr_backbone: 0.000006             # Paper: 6.0×10⁻⁶ for SAM2 image encoder (preserve pretrained priors)
+  lr_mamba: 0.01                    # Paper: 0.01 for Mamba branch (SGD)
+  weight_decay: 0.0001
+  optimizer: "adamw"                # Paper: AdamW for SAM2 branch
+  optimizer_mamba: "sgd"            # Paper: SGD with Nesterov for Mamba branch
+  scheduler: "cosine"               # Paper: cosine annealing for SAM2
+  scheduler_mamba: "poly"           # Paper: polynomial decay for Mamba
+  momentum_mamba: 0.99              # Paper: μ=0.99 (Nesterov)
+  nesterov_mamba: true              # Paper: SGD with Nesterov momentum
+  warmup_epochs: 5
+  grad_clip: 1.0
+  num_workers: 4
+  seed: 42
+
+  loss:
+    lambda_dice: 1.0
+    lambda_ce: 1.0
+    lambda_bcc: 1.0
+    lambda_edge: 0.5
+    edge_skip_steps: 10              # Only compute boundary loss every N steps (slow scipy EDT)
+
+  dfi:
+    T_max: 60000
+
+  save_dir: "./checkpoints/ddktn_voc"
+  save_every: 1
+  log_every: 20
+
+# ===== Testing =====
+testing:
+  checkpoint: "./checkpoints/ddktn_voc/best_model.pth"
+  output_dir: "./results/voc2012"
+  save_predictions: true
+  eval_metrics: true
+
+# ===== Environment =====
+environment:
+  sam2_repo: "/home/zlt/projects/sam2"

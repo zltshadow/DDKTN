@@ -1,0 +1,86 @@
+# DDKTN Configuration
+# Dual-Branch Dynamic Knowledge Transfer Network for Orbital Anatomy Segmentation
+
+# ===== Data Configuration =====
+data:
+  root: "./data"                    # Root directory of dataset
+  mode: "2d"                        # '2d' for slice-based, '3d' for volume-based
+  target_size: [256, 256]           # Input spatial size for U-Mamba branch
+  sam2_size: 1024                   # Input spatial size for SAM2 branch
+  num_classes: 4                    # Number of segmentation classes (including background)
+  slice_axis: 2                     # Axis for 3D->2D slicing (0=sagittal, 1=coronal, 2=axial)
+  val_ratio: 0.2                    # Validation split ratio (when not using cross-validation)
+
+# ===== Model Configuration =====
+model:
+  # U-Mamba branch
+  umamba:
+    input_channels: 1               # Grayscale CT input
+    features_per_stage: [32, 64, 128, 256, 512, 512]
+    strides: [[1,1], [2,2], [2,2], [2,2], [2,2], [2,2]]
+    n_blocks_per_stage: [2, 2, 2, 2, 2, 2]
+    kernel_sizes: [[3,3], [3,3], [3,3], [3,3], [3,3], [3,3]]
+
+  # SAM2 branch
+  sam2:
+    config_file: "configs/sam2.1/sam2.1_hiera_t.yaml"
+    checkpoint: "checkpoints/sam2.1_hiera_tiny.pt"
+    freeze_backbone: true           # Freeze SAM2 image encoder during training
+
+  # DFI module
+  dfi:
+    align_channels: 224             # Feature alignment dimension
+    num_heads: 8                    # Number of attention heads
+
+  # PAM module
+  pam:
+    tau: 0.9                        # Binarization threshold
+    bilateral: true                 # Symmetry-induced spatial decoupling
+
+  # Fusion
+  fusion:
+    hidden_dim: 256                 # Fusion MLP hidden dimension
+
+# ===== Training Configuration =====
+training:
+  epochs: 100                       # Total training epochs (paper: 100)
+  batch_size: 2                     # Batch size (paper: 2)
+  lr: 0.00003                       # Initial learning rate for SAM2 branch (paper: 3e-5)
+  lr_sam2_encoder: 0.000006         # Learning rate for SAM2 image encoder (paper: 6e-6)
+  lr_mamba: 0.01                    # Learning rate for Mamba branch (paper: 0.01)
+  weight_decay: 0.0001              # Weight decay
+  optimizer: "adamw"                # Optimizer for SAM2 branch
+  optimizer_mamba: "sgd"            # Optimizer for Mamba branch
+  scheduler: "cosine"               # LR scheduler for SAM2 branch
+  scheduler_mamba: "poly"           # LR scheduler for Mamba branch
+  momentum_mamba: 0.99              # Nesterov momentum for Mamba SGD
+  grad_clip: 1.0                    # Gradient clipping max norm
+  num_workers: 4                    # Data loading workers
+  seed: 42                          # Random seed
+
+  # Loss weights
+  loss:
+    lambda_dice: 1.0                # Dice loss weight
+    lambda_ce: 1.0                  # Cross-entropy loss weight
+    lambda_bcc: 1.0                 # BCC loss weight
+    lambda_edge: 0.5                # Boundary loss weight
+
+  # DFI temporal parameters
+  dfi:
+    T_max: 100000                   # Total training iterations for DFI decay
+
+  # Checkpointing
+  save_dir: "./checkpoints/ddktn"   # Directory to save checkpoints
+  save_every: 10                    # Save checkpoint every N epochs
+  log_every: 50                     # Log every N iterations
+
+# ===== Testing Configuration =====
+testing:
+  checkpoint: "./checkpoints/ddktn/best_model.pth"
+  output_dir: "./results"
+  save_predictions: true            # Save predicted masks
+  eval_metrics: true                # Compute DSC and HD95
+
+# ===== Environment =====
+environment:
+  sam2_repo: "/home/zlt/projects/sam2"  # Path to SAM2 repository
